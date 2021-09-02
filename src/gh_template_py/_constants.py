@@ -1,4 +1,4 @@
 """Constants."""
 
-CACHE_NAME = 'gh_template_py'
+CACHE_NAME = 'lk_textbooks'
 CACHE_TIMEOUT = 3600
