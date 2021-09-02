@@ -4,7 +4,8 @@ import time
 
 from gig import ents
 from selenium import webdriver
-from selenium.common.exceptions import StaleElementReferenceException
+from selenium.common.exceptions import (StaleElementReferenceException,
+                                        WebDriverException)
 from selenium.webdriver.firefox.options import Options
 from utils import tsv
 from utils.cache import cache
@@ -83,7 +84,7 @@ def scrape_index():
 
     driver.quit()
 
-    data_file = '/tmp/gnd_info.index.tsv'
+    data_file = '/tmp/gnd_info.index.unexpanded.tsv'
     tsv.write(data_file, data_list)
     n_data_list = len(data_list)
     log.info(f'Wrote {n_data_list} items to {data_file}')
@@ -142,7 +143,7 @@ def expand_data(data):
 
 
 def expand_index():
-    data_file = '/tmp/gnd_info.index.tsv'
+    data_file = '/tmp/gnd_info.index.unexpanded.tsv'
     data_list = tsv.read(data_file)
 
     expanded_data_list = list(
@@ -151,61 +152,90 @@ def expand_index():
             data_list,
         )
     )
-    expanded_data_file = '/tmp/gnd_info.index.expanded.tsv'
+    expanded_data_file = '/tmp/gnd_info.index.unexpanded.tsv'
     tsv.write(expanded_data_file, expanded_data_list)
     n_data_list = len(expanded_data_list)
     log.info(f'Wrote {n_data_list} items to {expanded_data_file}')
 
+
+@cache(CACHE_NAME, CACHE_TIMEOUT)
+def scrape_dsd_page2(dsd_url):
+    cached_result = scrape_dsd_page(dsd_url)
+    if len(cached_result) != 100 and len(cached_result) != 0:
+        return cached_result
+    return scrape_dsd_page_nocache(dsd_url)
+
+
 @cache(CACHE_NAME, CACHE_TIMEOUT)
 def scrape_dsd_page(dsd_url):
+    return scrape_dsd_page_nocache(dsd_url)
+
+
+def scrape_dsd_page_nocache(dsd_url):
     options = Options()
     options.headless = True
     driver = webdriver.Firefox(options=options)
 
-    driver.get(dsd_url)
-    option_100 = driver.find_element_by_xpath("//option[@value='100']")
-    option_100.click()
-
-    table = driver.find_element_by_id('showtable')
     gnd_info_list = []
-    for tr in table.find_elements_by_tag_name('tr'):
-        td_text_list = list(map(
-            lambda td: td.text,
-            tr.find_elements_by_tag_name('td'),
-        ))
-        if len(td_text_list) != 8:
-            if len(td_text_list) != 0:
-                td_text_list = str(td_text_list)
-                log.warning(f'Invalid table format: {td_text_list}')
-            continue
+    try:
+        driver.get(dsd_url)
+        option_100 = driver.find_element_by_xpath("//option[@value='100']")
+        option_100.click()
 
-        (
-            row_num,
-            district_name,
-            dsd_name,
-            gnd_name,
-            gn_name,
-            phone_home,
-            phone_personal,
-            email,
+        while True:
+            table = driver.find_element_by_id('showtable')
+            for tr in table.find_elements_by_tag_name('tr'):
+                td_text_list = list(
+                    map(
+                        lambda td: td.text,
+                        tr.find_elements_by_tag_name('td'),
+                    )
+                )
+                if len(td_text_list) != 8:
+                    if len(td_text_list) != 0:
+                        td_text_list = str(td_text_list)
+                        log.warning(f'Invalid table format: {td_text_list}')
+                    continue
 
-        ) = td_text_list
-        gnd_info_list.append(dict(
-            row_num=row_num,
-            district_name=district_name,
-            dsd_name=dsd_name,
-            gnd_name=gnd_name,
-            gn_name=gn_name,
-            phone_home=phone_home,
-            phone_personal=phone_personal,
-            email=email,
-        ))
+                (
+                    row_num,
+                    district_name,
+                    dsd_name,
+                    gnd_name,
+                    gn_name,
+                    phone_home,
+                    phone_personal,
+                    email,
+                ) = td_text_list
+                gnd_info_list.append(
+                    dict(
+                        row_num=row_num,
+                        district_name=district_name,
+                        dsd_name=dsd_name,
+                        gnd_name=gnd_name,
+                        gn_name=gn_name,
+                        phone_home=phone_home,
+                        phone_personal=phone_personal,
+                        email=email,
+                    )
+                )
+
+            li_next = driver.find_element_by_id('showtable_next')
+            class_ = li_next.get_attribute('class')
+            if 'disabled' in class_:
+                break
+            else:
+                li_next.click()
+                time.sleep(TIME_WAIT)
+    except WebDriverException:
+        log.error(f'Could not scrape: {dsd_url}')
 
     driver.quit()
     return gnd_info_list
 
+
 def scrape_all_gnds():
-    expanded_data_file = '/tmp/gnd_info.index.expanded.tsv'
+    expanded_data_file = '/tmp/gnd_info.index.unexpanded.tsv'
     expanded_data_list = tsv.read(expanded_data_file)
 
     gnd_info_list = []
@@ -214,20 +244,111 @@ def scrape_all_gnds():
         dsd_url = data['dsd_url']
         dsd_name = data['dsd_name']
         district_name = data['district_name'].upper()
-        gnd_info_list_for_dsd = scrape_dsd_page(dsd_url)
+        gnd_info_list_for_dsd = scrape_dsd_page2(dsd_url)
         n_gnd = len(gnd_info_list_for_dsd)
-        log.info(f'{i_data}/{n_data} Scraped {n_gnd} GNDs '
-            + f'for {district_name}/{dsd_name}')
+        log.info(
+            f'{i_data}/{n_data} Scraped {n_gnd} GNDs '
+            + f'for {district_name}/{dsd_name}'
+        )
         gnd_info_list += gnd_info_list_for_dsd
         # break
 
-    gnd_info_file = '/tmp/gnd_info.all.tsv'
+    gnd_info_file = '/tmp/gnd_info.unexpanded.tsv'
     tsv.write(gnd_info_file, gnd_info_list)
     n_gnd_info_list = len(gnd_info_list)
     log.info(f'Wrote {n_gnd_info_list} items to {gnd_info_file}')
 
 
+def expand_gnd_info_item(info_item):
+    log.info(f'Expanding {district_name}/{dsd_name}/{gnd_name}...')
+    info_item['row_num']
+    district_name = info_item['district_name']
+    dsd_name = info_item['dsd_name']
+    gnd_name = info_item['gnd_name']
+    gn_name = info_item['gn_name']
+    phone_home = info_item['phone_home']
+    phone_personal = info_item['phone_personal']
+    email = info_item['email']
+
+    _ents = ents.get_entities_by_name_fuzzy(
+        district_name,
+        filter_entity_type='district',
+        limit=1,
+    )
+    if _ents:
+        ent = _ents[0]
+        district_name = ent['name']
+        district_id = ent['id']
+    else:
+        log.warning(f'Could not find GIG Ent for {district_name}')
+        district_id = None
+
+    dsd_name = DSD_NAME_MAP.get(dsd_name, dsd_name)
+    _ents = ents.get_entities_by_name_fuzzy(
+        dsd_name,
+        filter_entity_type='dsd',
+        filter_parent_id=district_id,
+        limit=1,
+    )
+    if _ents:
+        ent = _ents[0]
+        dsd_name = ent['name']
+        dsd_id = ent['id']
+    else:
+        log.warning(f'Could not find GIG Ent for {district_name}/{dsd_name}')
+        dsd_id = None
+
+    _ents = ents.get_entities_by_name_fuzzy(
+        gnd_name,
+        filter_entity_type='gnd',
+        filter_parent_id=dsd_id,
+        limit=1,
+    )
+    if _ents:
+        ent = _ents[0]
+        gnd_name = ent['name']
+        gnd_id = ent['id']
+    else:
+        log.warning(
+            f'Could not find GIG Ent for {district_name}/{dsd_name}/{gnd_name}'
+        )
+        gnd_id = None
+
+    return dict(
+        district_id=district_id,
+        district_name=district_name,
+        dsd_id=dsd_id,
+        dsd_name=dsd_name,
+        gnd_id=gnd_id,
+        gnd_name=gnd_name,
+        gn_name=gn_name,
+        phone_home=phone_home,
+        phone_personal=phone_personal,
+        email=email,
+    )
+
+
+def expand_gnd_info():
+    gnd_info_file = '/tmp/gnd_info.unexpanded.tsv'
+    gnd_info_list = tsv.read(gnd_info_file)
+
+    expanded_gnd_info_list = list(
+        map(
+            expand_gnd_info_item,
+            gnd_info_list,
+        )
+    )
+
+    expanded_gnd_info_file = '/tmp/gnd_info.tsv'
+    tsv.write(expanded_gnd_info_file, expanded_gnd_info_list)
+    n_expanded_gnd_info_list = len(expanded_gnd_info_list)
+    log.info(
+        f'Wrote {n_expanded_gnd_info_list} items to {expanded_gnd_info_file}'
+    )
+
+
 if __name__ == '__main__':
     # scrape_index()
     # expand_index()
-    scrape_all_gnds()
+    # scrape_all_gnds()
+    expand_gnd_info()
