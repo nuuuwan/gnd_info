@@ -1,21 +1,5 @@
-# gh_template_py
+# Grama Niladhari Info
 
-## Release History
+Contains phone and email information for Grama Niladhari Division officers. 
 
-### 1.0.0 (PRE-RELEASE)
-  * Basic changes
-  * Lint
-  * Initial files
-  * renamed files
-* [2021-09-02 01:09PM] Basic Crawl
-  * Updated README
-  * Index scrape complete
-  * Pre-Merge
-  * crawl main content
-* [2021-09-02 02:05PM] crawl main content
-  * Updated README
-  * main scraper done
-  * main scraper done
-  * Done
-  * Updated workflows
-  * Pre-Merge
+*Source: [Ministry of Home Affairs](http://apps.moha.gov.lk:8090/officerinfo/)*
