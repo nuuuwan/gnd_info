@@ -4,14 +4,18 @@ import time
 
 from gig import ents
 from selenium import webdriver
-from selenium.common.exceptions import (StaleElementReferenceException,
-                                        WebDriverException)
+from selenium.common.exceptions import (
+    StaleElementReferenceException,
+    WebDriverException,
+)
 from selenium.webdriver.firefox.options import Options
 from utils import tsv
 from utils.cache import cache
 
 from gnd_info._constants import CACHE_NAME, CACHE_TIMEOUT
 from gnd_info._utils import log
+from gnd_info.DSD_NAME_MAP import DSD_NAME_MAP
+from gnd_info.GND_NAME_MAP import GND_NAME_MAP
 
 URL = 'http://apps.moha.gov.lk:8090/officerinfo/'
 
@@ -90,29 +94,13 @@ def scrape_index():
     log.info(f'Wrote {n_data_list} items to {data_file}')
 
 
-DSD_NAME_MAP = {
-    'kalmunayi north': 'Kalmunai Tamil Division',
-    'Koralai Pattu North': 'Koralai Pattu North (Vaharai)',
-    'Dehiwala-Mount Lavinia': 'Dehiwala',
-    'Hanwella': 'Seethawaka',
-    # 'Madampagama': 'Madampagama',
-    # 'Waduramba': 'Waduramba',
-    'Vadamaradchi East (Maruthnkerny)': 'Vadamaradchi East',
-    'Mahawa': 'Maho',
-    'Nanaddan': 'Nanattan',
-    'Four Gravets': 'Matara Four Gravets',
-    'Mundalama': 'Mundel',
-    'Kantalai': 'Kanthale',
-    'Verugal': 'Verugal (Eachchilampattu)',
-}
-
-
 def expand_data(data):
     district_name = data['district_name']
     _ents = ents.get_entities_by_name_fuzzy(
         district_name,
         filter_entity_type='district',
         limit=1,
+        min_fuzz_ratio=90,
     )
     if _ents:
         ent = _ents[0]
@@ -129,6 +117,7 @@ def expand_data(data):
         filter_entity_type='dsd',
         filter_parent_id=data['district_id'],
         limit=1,
+        min_fuzz_ratio=90,
     )
     if _ents:
         ent = _ents[0]
@@ -136,7 +125,7 @@ def expand_data(data):
         data['dsd_id'] = ent['id']
     else:
         log.warning(f'Could not find GIG Ent for {district_name}/{dsd_name}')
-        # print(f"'{dsd_name}': '{dsd_name}',")
+        print(f"'{dsd_name}': '{dsd_name}',")
         data['dsd_id'] = None
 
     return data
@@ -259,8 +248,9 @@ def scrape_all_gnds():
     log.info(f'Wrote {n_gnd_info_list} items to {gnd_info_file}')
 
 
-def expand_gnd_info_item(info_item):
-    log.info(f'Expanding {district_name}/{dsd_name}/{gnd_name}...')
+def expand_gnd_info_item(x):
+    i_info_item, info_item = x
+
     info_item['row_num']
     district_name = info_item['district_name']
     dsd_name = info_item['dsd_name']
@@ -270,10 +260,16 @@ def expand_gnd_info_item(info_item):
     phone_personal = info_item['phone_personal']
     email = info_item['email']
 
+    if i_info_item % 100 == 0:
+        log.info(
+            f'# {i_info_item}) Expanding {district_name}/{dsd_name}/{gnd_name}'
+        )
+
     _ents = ents.get_entities_by_name_fuzzy(
         district_name,
         filter_entity_type='district',
         limit=1,
+        min_fuzz_ratio=90,
     )
     if _ents:
         ent = _ents[0]
@@ -289,28 +285,42 @@ def expand_gnd_info_item(info_item):
         filter_entity_type='dsd',
         filter_parent_id=district_id,
         limit=1,
+        min_fuzz_ratio=90,
     )
     if _ents:
         ent = _ents[0]
         dsd_name = ent['name']
         dsd_id = ent['id']
     else:
-        log.warning(f'Could not find GIG Ent for {district_name}/{dsd_name}')
+
+        # print(
+        #     f"'{dsd_name}': '{dsd_name}',  #"
+        #     + f" {district_name} ({district_id})"
+        # )
         dsd_id = None
 
+    gnd_name = GND_NAME_MAP.get(gnd_name, gnd_name)
     _ents = ents.get_entities_by_name_fuzzy(
         gnd_name,
         filter_entity_type='gnd',
-        filter_parent_id=dsd_id,
+        filter_parent_id=district_id,
         limit=1,
+        min_fuzz_ratio=60,
     )
     if _ents:
         ent = _ents[0]
+        # if gnd_name != ent['name']:
+        #     print('#', i_info_item, gnd_name, ent['name'])
         gnd_name = ent['name']
         gnd_id = ent['id']
     else:
-        log.warning(
-            f'Could not find GIG Ent for {district_name}/{dsd_name}/{gnd_name}'
+        # log.warning(
+        #     f'Could not find GIG Ent for {district_name}/{dsd_name}/{gnd_name}'
+        # )
+        print(
+            f"'{gnd_name}': '{gnd_name}',  "
+            + f"# {i_info_item}) "
+            + f" {district_name} ({district_id}) + {dsd_name} ({dsd_id})"
         )
         gnd_id = None
 
@@ -335,8 +345,15 @@ def expand_gnd_info():
     expanded_gnd_info_list = list(
         map(
             expand_gnd_info_item,
-            gnd_info_list,
+            enumerate(gnd_info_list),
         )
+    )
+
+    expanded_gnd_info_list = sorted(
+        expanded_gnd_info_list,
+        key=lambda d: str(d['district_id'])
+        + str(d['dsd_id'])
+        + str(d['gnd_id']),
     )
 
     expanded_gnd_info_file = '/tmp/gnd_info.tsv'
