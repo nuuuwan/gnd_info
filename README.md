@@ -12,3 +12,5 @@
   * Index scrape complete
   * Pre-Merge
   * crawl main content
+* [2021-09-02 02:05PM] crawl main content
+  * Updated README
