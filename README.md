@@ -11,3 +11,4 @@
   * Updated README
   * Index scrape complete
   * Pre-Merge
+  * crawl main content
