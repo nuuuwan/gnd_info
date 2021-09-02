@@ -141,7 +141,7 @@ def expand_index():
             data_list,
         )
     )
-    expanded_data_file = '/tmp/gnd_info.index.unexpanded.tsv'
+    expanded_data_file = '/tmp/gnd_info.index.tsv'
     tsv.write(expanded_data_file, expanded_data_list)
     n_data_list = len(expanded_data_list)
     log.info(f'Wrote {n_data_list} items to {expanded_data_file}')
@@ -224,7 +224,7 @@ def scrape_dsd_page_nocache(dsd_url):
 
 
 def scrape_all_gnds():
-    expanded_data_file = '/tmp/gnd_info.index.unexpanded.tsv'
+    expanded_data_file = '/tmp/gnd_info.index.tsv'
     expanded_data_list = tsv.read(expanded_data_file)
 
     gnd_info_list = []

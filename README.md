@@ -17,3 +17,4 @@
   * main scraper done
   * main scraper done
   * Done
+  * Updated workflows
