@@ -7,3 +7,5 @@
   * Lint
   * Initial files
   * renamed files
+* [2021-09-02 01:09PM] Basic Crawl
+  * Updated README
