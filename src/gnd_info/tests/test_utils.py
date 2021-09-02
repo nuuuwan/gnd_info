@@ -1,6 +1,6 @@
 import unittest
 
-from lk_textbooks import _utils
+from gnd_info import _utils
 
 
 class TestCase(unittest.TestCase):

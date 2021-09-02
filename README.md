@@ -6,3 +6,4 @@
   * Basic changes
   * Lint
   * Initial files
+  * renamed files
