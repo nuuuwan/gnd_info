@@ -7,7 +7,9 @@ from selenium import webdriver
 from selenium.common.exceptions import StaleElementReferenceException
 from selenium.webdriver.firefox.options import Options
 from utils import tsv
+from utils.cache import cache
 
+from gnd_info._constants import CACHE_NAME, CACHE_TIMEOUT
 from gnd_info._utils import log
 
 URL = 'http://apps.moha.gov.lk:8090/officerinfo/'
@@ -21,9 +23,9 @@ def base64_encode(s):
 
 
 def scrape_index():
-    firefox_options = Options()
-    firefox_options.headless = True
-    driver = webdriver.Firefox(firefox_options=firefox_options)
+    options = Options()
+    options.headless = True
+    driver = webdriver.Firefox(options=options)
 
     driver.get(URL)
 
@@ -154,7 +156,78 @@ def expand_index():
     n_data_list = len(expanded_data_list)
     log.info(f'Wrote {n_data_list} items to {expanded_data_file}')
 
+@cache(CACHE_NAME, CACHE_TIMEOUT)
+def scrape_dsd_page(dsd_url):
+    options = Options()
+    options.headless = True
+    driver = webdriver.Firefox(options=options)
+
+    driver.get(dsd_url)
+    option_100 = driver.find_element_by_xpath("//option[@value='100']")
+    option_100.click()
+
+    table = driver.find_element_by_id('showtable')
+    gnd_info_list = []
+    for tr in table.find_elements_by_tag_name('tr'):
+        td_text_list = list(map(
+            lambda td: td.text,
+            tr.find_elements_by_tag_name('td'),
+        ))
+        if len(td_text_list) != 8:
+            if len(td_text_list) != 0:
+                td_text_list = str(td_text_list)
+                log.warning(f'Invalid table format: {td_text_list}')
+            continue
+
+        (
+            row_num,
+            district_name,
+            dsd_name,
+            gnd_name,
+            gn_name,
+            phone_home,
+            phone_personal,
+            email,
+
+        ) = td_text_list
+        gnd_info_list.append(dict(
+            row_num=row_num,
+            district_name=district_name,
+            dsd_name=dsd_name,
+            gnd_name=gnd_name,
+            gn_name=gn_name,
+            phone_home=phone_home,
+            phone_personal=phone_personal,
+            email=email,
+        ))
+
+    driver.quit()
+    return gnd_info_list
+
+def scrape_all_gnds():
+    expanded_data_file = '/tmp/gnd_info.index.expanded.tsv'
+    expanded_data_list = tsv.read(expanded_data_file)
+
+    gnd_info_list = []
+    n_data = len(expanded_data_list)
+    for i_data, data in enumerate(expanded_data_list):
+        dsd_url = data['dsd_url']
+        dsd_name = data['dsd_name']
+        district_name = data['district_name'].upper()
+        gnd_info_list_for_dsd = scrape_dsd_page(dsd_url)
+        n_gnd = len(gnd_info_list_for_dsd)
+        log.info(f'{i_data}/{n_data} Scraped {n_gnd} GNDs '
+            + f'for {district_name}/{dsd_name}')
+        gnd_info_list += gnd_info_list_for_dsd
+        # break
+
+    gnd_info_file = '/tmp/gnd_info.all.tsv'
+    tsv.write(gnd_info_file, gnd_info_list)
+    n_gnd_info_list = len(gnd_info_list)
+    log.info(f'Wrote {n_gnd_info_list} items to {gnd_info_file}')
+
 
 if __name__ == '__main__':
     # scrape_index()
-    expand_index()
+    # expand_index()
+    scrape_all_gnds()
